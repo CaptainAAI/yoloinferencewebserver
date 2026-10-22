@@ -30,7 +30,8 @@ It is one of four repositories that work together:
 
 ## Requirements
 
-- Node.js 18 or newer and npm (tested: Node 24 on a Jetson Orin). One dependency: `express`.
+- Node.js 18 or newer and npm (tested: Node 24 on a Jetson Orin). One dependency: `express`. `deploy.sh` installs
+  Node.js and npm with apt when they are missing or too old, and `express` with npm.
 - [yoloinferencemodel](https://github.com/CaptainAAI/yoloinferencemodel) running on the same Jetson (port 6767).
 - Optional: [yoloinferenceimageserver](https://github.com/CaptainAAI/yoloinferenceimageserver) for the Images page.
 - `free` (procps) and Python with `tensorrt` for the memory panel and the TensorRT version; both are on a Jetson.
@@ -45,12 +46,18 @@ cd yoloinferencewebserver
 bash deploy.sh
 ```
 
-Then open `http://<jetson-address>:8080`, e.g. `http://140.129.7.180:8080`. `deploy.sh` prints every address the
-Jetson has.
+Run it as your normal user (not with `sudo`); it asks for your sudo password once. It installs what is missing,
+copies the dashboard to `~/yoloinferenceweb`, runs `npm install`, and installs and starts the systemd service
+`yolo-dashboard`, which also starts at every boot and restarts after a crash.
 
-To update later: `git pull && bash deploy.sh`. To make it start after a reboot: `bash deploy.sh --service`.
+Then open `http://<jetson-address>:8080`, e.g. `http://140.129.7.180:8080`. `deploy.sh` prints every address the
+Jetson has, and whether `server.py` and the image server are reachable.
+
+To update later: `git pull && bash deploy.sh`. Every command of the script is in [deploy.sh](#deploysh).
 
 ## Running it by hand
+
+For development. On the Jetson, stop the service first (`bash deploy.sh stop`), since both use port 8080.
 
 ```bash
 npm install
@@ -126,23 +133,54 @@ The pages are plain HTML, CSS and JavaScript (no framework, no build step); ever
 | `public/index.html`, `public/app.js` | Models page |
 | `public/images.html`, `public/images.js` | Images page |
 | `public/style.css`, `public/logo.png` | REC theme (green `#008838`, yellow `#f8b800`), light and dark mode |
-| `deploy.sh` | Install and restart on the Jetson |
+| `deploy.sh` | Installs the dashboard on the Jetson as the systemd service `yolo-dashboard`, and manages it |
 
 ## deploy.sh
 
-| Command | What it does |
-| --- | --- |
-| `bash deploy.sh` | Checks Node and npm, copies the files to `~/yoloinferenceweb`, runs `npm install`, restarts it with `nohup`, prints the addresses and whether `server.py` and the image server are reachable. Survives logging out, not a reboot |
-| `bash deploy.sh --service` | The same as a systemd service `yolo-dashboard` (starts after a reboot, restarts after a crash, log in `web.log`). Asks for your sudo password once |
-| `bash deploy.sh --status` | Only shows what is running |
+`deploy.sh` installs the dashboard as the systemd service `yolo-dashboard` and manages it. Run it on the Jetson, from
+the clone, as your normal user; it refuses to run as root and asks for sudo itself when it needs it.
 
-Settings: `WEB_DIR` (`~/yoloinferenceweb`), `WEB_PORT` (8080), `INFER_PORT` (6767).
+| Command | What it does | sudo |
+| --- | --- | --- |
+| `bash deploy.sh` (or `install`) | Install or update everything, then (re)start the service: the six steps below | yes |
+| `bash deploy.sh check` | Only checks the requirements and which installed files differ; installs and changes nothing. Exit code 1 when something is missing | no |
+| `bash deploy.sh status` | Service state, start time, start at boot, pid, memory, automatic restarts, log size, installed commit, settings; who holds port 8080; every address of the dashboard, whether `server.py` and the image server are reachable, the TensorRT version and memory; the last 8 log lines | no |
+| `bash deploy.sh logs [N]` | The last N log lines (default 50); `logs -f` follows the log | no |
+| `bash deploy.sh start`, `stop`, `restart` | Controls the service; `start` and `restart` wait until it answers | yes |
+| `bash deploy.sh unit` | Prints the systemd unit file it installs | no |
+| `bash deploy.sh uninstall` | Stops, disables and removes the service; the files stay | yes |
+| `bash deploy.sh help` | The usage text from the top of the script | no |
+
+`install`, step by step:
+
+| Step | What happens |
+| --- | --- |
+| 1. Requirements | Asks for sudo once. Installs with apt what is missing: `curl`, and `nodejs` + `npm` when Node.js is missing or older than 18. Checks `free` (memory panel) and whether `python3` can read the TensorRT version |
+| 2. Files and npm dependencies | Lists the files that changed, copies `package.json`, `package-lock.json`, `server.js` and `public/` to `WEB_DIR`, runs `npm install --omit=dev` there and checks that `express` is installed. Writes `.deployed` (commit and date) and remembers the settings |
+| 3. Service | Writes `/etc/systemd/system/yolo-dashboard.service` (prints the diff when it changes), reloads systemd and enables the service for every boot |
+| 4. Start | Stops a copy of the dashboard started by hand (for example with `nohup npm start`) that holds the port, then restarts the service |
+| 5. Wait | Polls `http://127.0.0.1:8080/` for up to 30 s. If the service crashes meanwhile, it prints the new log lines and stops |
+| 6. Report | The output of `bash deploy.sh status` |
+
+The service runs `node server.js` as your user in `WEB_DIR`, with `PORT`, `YOLO_API` and `NODE_ENV=production` set; it
+starts after the network (and after `yolo-inference` and `yolo-images` when installed), restarts 5 s after a crash,
+and appends its output to `web.log`. See it with `bash deploy.sh unit`.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `WEB_DIR` | `~/yoloinferenceweb` | Folder the dashboard runs in |
+| `WEB_PORT` | 8080 | Port (3000 is used by another app on the Jetson) |
+| `INFER_PORT` | 6767 | Port of `server.py` on this Jetson |
+
+Example: `WEB_PORT=8081 bash deploy.sh`. A setting given once is remembered in
+`~/.config/yolo-deploy/yolo-dashboard.env` and used by every later run.
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| The page does not open | `bash deploy.sh --status`; check the port and the firewall; see `~/yoloinferenceweb/web.log` |
+| The page does not open | `bash deploy.sh status` and `bash deploy.sh logs`; check the port and the firewall |
+| `deploy.sh`: *sudo needs your password but there is no terminal* | Run it in a terminal on the Jetson, or over `ssh -t` |
 | Badge says *server.py not reachable* | Deploy or start [yoloinferencemodel](https://github.com/CaptainAAI/yoloinferencemodel) |
 | Images page says *image server not reachable* | Deploy [yoloinferenceimageserver](https://github.com/CaptainAAI/yoloinferenceimageserver), check the address on the page |
 | TensorRT shows `–` | `python3 -c "import tensorrt"` fails for the user running the dashboard; set `PYTHON` |
