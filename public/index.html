@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLO Inference Server</title>
+  <link rel="icon" href="logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="appbar">
+    <a class="brand" href="./">
+      <span class="logo-box"><img src="logo.png" alt="REC"></span>
+      <span class="brand-text">
+        <strong>YOLO Inference Server</strong>
+        <small>Monitoring &amp; model manager</small>
+      </span>
+    </a>
+    <nav class="nav">
+      <a href="./" class="active">Models</a>
+      <a href="images.html">Images</a>
+    </nav>
+    <span id="conn" class="conn" title="Connection to server.py">connecting…</span>
+  </header>
+
+  <div id="message" class="message" role="status" hidden></div>
+
+  <main>
+    <section class="system">
+      <div id="server" class="tiles"></div>
+      <div class="panel memory">
+        <div class="panel-head">
+          <h2>Memory</h2>
+          <span class="sub"><code>free -h</code></span>
+        </div>
+        <div id="mem-bar" class="mem-bar"></div>
+        <div id="mem-legend" class="legend"></div>
+        <table id="mem-table" class="mem-table"></table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Models</h2>
+        <span class="sub">Click a model for its full graph</span>
+      </div>
+      <div id="models" class="models"></div>
+      <p id="no-models" class="empty" hidden>No models loaded. Load one below.</p>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <div class="panel-head"><h2>Load a model</h2></div>
+        <form id="load-form" class="row-form">
+          <label>Name
+            <input name="name" required pattern="[A-Za-z0-9_\-]{1,64}" placeholder="model4" autocomplete="off">
+          </label>
+          <label>File
+            <select name="file" id="load-file" required></select>
+          </label>
+          <label>Threads
+            <select name="workers">
+              <option>1</option><option>2</option><option>3</option><option>4</option>
+            </select>
+          </label>
+          <button type="submit">Load</button>
+        </form>
+        <p class="hint">The name is what clients send as <code>model_name</code> (the SDK's <code>Detect("model4", …)</code>). The model loads in the background; its card shows <em>loading</em> until it is ready.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>TensorRT conversions</h2>
+          <span class="sub">.pt → .engine with Ultralytics export</span>
+        </div>
+        <div id="exports" class="jobs"></div>
+        <p id="no-exports" class="hint">None yet. Use <em>Convert to TensorRT</em> on a .pt file below.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Model files</h2>
+        <span class="sub">in <code>~/yoloinference/model</code></span>
+      </div>
+      <div class="table-wrap">
+        <table class="files">
+          <thead><tr><th>File</th><th class="num">Size</th><th>Modified</th><th>Used by</th><th></th></tr></thead>
+          <tbody id="files"></tbody>
+        </table>
+      </div>
+      <form id="upload-form" class="row-form">
+        <label>Upload <span class="sub">.engine, .pt or .onnx</span>
+          <input type="file" name="file" accept=".engine,.pt,.onnx" required>
+        </label>
+        <label class="check"><input type="checkbox" name="overwrite"> Replace if it exists</label>
+        <button type="submit">Upload</button>
+        <progress id="upload-progress" max="100" value="0" hidden></progress>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    Model figures come from Ultralytics (Results.speed, model metadata, ultralytics.utils) through server.py.
+    Memory (<code>free</code>) and the TensorRT version are read by this dashboard server.
+  </footer>
+
+  <dialog id="detail" class="dialog wide">
+    <div class="dialog-head">
+      <div>
+        <h2 id="detail-name"></h2>
+        <div id="detail-meta" class="card-meta"></div>
+      </div>
+      <span id="detail-badge" class="badge"></span>
+      <button class="icon" data-close aria-label="Close">×</button>
+    </div>
+    <div id="detail-stats" class="stats wide-stats"></div>
+    <h3>Time per request <span class="sub">Results.speed, stacked</span></h3>
+    <div id="detail-legend" class="legend"></div>
+    <div id="detail-chart" class="chart"></div>
+    <h3>Boxes per request</h3>
+    <div id="detail-boxes" class="chart small"></div>
+    <p id="detail-foot" class="hint"></p>
+  </dialog>
+
+  <dialog id="convert" class="dialog">
+    <form id="convert-form" method="dialog">
+      <div class="dialog-head">
+        <h2>Convert to TensorRT</h2>
+        <button class="icon" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <p class="hint">Builds an FP16 or FP32 TensorRT engine from <code id="convert-file"></code> with Ultralytics' <code>export(format="engine")</code>. It runs in the background, one conversion at a time, and usually takes a few minutes on the Jetson.</p>
+      <div class="row-form">
+        <label>Output file
+          <input name="output" required pattern="[^/\\]+\.engine">
+        </label>
+      </div>
+      <div class="row-form">
+        <label>Height
+          <input name="height" type="number" min="32" max="4096" step="1" value="640" required>
+        </label>
+        <label>Width
+          <input name="width" type="number" min="32" max="4096" step="1" value="640" required>
+        </label>
+        <label class="check"><input type="checkbox" name="half" checked> FP16</label>
+        <label class="check"><input type="checkbox" name="overwrite"> Replace if it exists</label>
+      </div>
+      <p class="hint">The engine's input size is fixed. Ultralytics rounds each side up to a multiple of 32: for 1280 × 720 images, height 720 becomes 736.</p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" data-close>Cancel</button>
+        <button type="submit">Convert</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

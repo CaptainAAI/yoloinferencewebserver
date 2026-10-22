@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saved Images · YOLO Inference Server</title>
+  <link rel="icon" href="logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="appbar">
+    <a class="brand" href="./">
+      <span class="logo-box"><img src="logo.png" alt="REC"></span>
+      <span class="brand-text">
+        <strong>YOLO Inference Server</strong>
+        <small>Monitoring &amp; model manager</small>
+      </span>
+    </a>
+    <nav class="nav">
+      <a href="./">Models</a>
+      <a href="images.html" class="active">Images</a>
+    </nav>
+    <span id="conn" class="conn" title="Connection to the image server">connecting…</span>
+  </header>
+
+  <div id="message" class="message" role="status" hidden></div>
+
+  <main>
+    <section class="two-col">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Saving images</h2>
+          <span class="sub">server.py → image server</span>
+        </div>
+        <form id="server-form" class="row-form">
+          <label>Image server address
+            <input id="image-server" required placeholder="127.0.0.1:6770" autocomplete="off" spellcheck="false">
+          </label>
+          <button type="submit">Save address</button>
+          <span id="server-state" class="pill">checking…</span>
+        </form>
+        <div id="save-stats" class="stats wide-stats"></div>
+        <div id="save-error" class="error-text" hidden></div>
+        <h3>Save images of</h3>
+        <div id="save-models" class="toggle-list"></div>
+        <p class="hint">Every image sent to a model with saving on is kept, with its boxes. Clients don't change anything; saving runs in the background and doesn't slow detection down. The switch is also on each model's card.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Image store</h2>
+          <span class="sub">on the Jetson</span>
+        </div>
+        <div id="store-stats" class="stats wide-stats"></div>
+        <p id="store-hint" class="hint"></p>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Saved images</h2>
+        <span id="match-count" class="sub"></span>
+      </div>
+      <form id="filters" class="panel filter-bar">
+        <label>Model
+          <select id="f-model"><option value="">All models</option></select>
+        </label>
+        <label>Class
+          <select id="f-class"><option value="">All classes</option></select>
+        </label>
+        <label>Boxes
+          <select id="f-boxes">
+            <option value="any">Any</option>
+            <option value="with">With boxes</option>
+            <option value="without">Without boxes</option>
+          </select>
+        </label>
+        <label>From
+          <input type="date" id="f-since">
+        </label>
+        <label>To
+          <input type="date" id="f-until">
+        </label>
+        <label>Search id
+          <input id="f-q" placeholder="20261022-1343" autocomplete="off" spellcheck="false">
+        </label>
+        <label>Sort
+          <select id="f-sort">
+            <option value="new">Newest first</option>
+            <option value="old">Oldest first</option>
+          </select>
+        </label>
+        <button type="button" id="f-reset" class="secondary">Reset</button>
+      </form>
+
+      <div id="selection-bar" class="selection-bar">
+        <label class="check"><input type="checkbox" id="select-page"> Select shown</label>
+        <button type="button" id="select-all" class="secondary small">Select all matching</button>
+        <b id="selected-count">0 selected</b>
+        <button type="button" id="clear-selection" class="secondary small" hidden>Clear</button>
+        <span class="spacer"></span>
+        <label>Format
+          <select id="export-format">
+            <option value="yolo">YOLO dataset (images + labels)</option>
+            <option value="images">Images only</option>
+          </select>
+        </label>
+        <label id="export-conf-label">Min score
+          <input type="number" id="export-conf" min="0" max="1" step="0.05" value="0">
+        </label>
+        <button type="button" id="download" disabled>Download</button>
+        <button type="button" id="delete-selected" class="danger" disabled>Delete</button>
+      </div>
+
+      <div id="gallery" class="gallery"></div>
+      <p id="no-images" class="empty" hidden>No images match.</p>
+      <div class="more"><button id="more" class="secondary" hidden>Load more</button></div>
+      <!-- Download = a normal form post, so the browser streams the zip to disk -->
+      <form id="export-form" method="post" action="/images-api/export" hidden>
+        <input name="ids"><input name="format"><input name="min_conf">
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    Images are kept by the image server (image_server.py) on the Jetson, which only the Jetson itself can reach;
+    this page reaches it through the dashboard. The oldest images are deleted when the count or disk limits are reached.
+  </footer>
+
+  <dialog id="viewer" class="dialog wide">
+    <div class="dialog-head">
+      <div>
+        <h2 id="viewer-title"></h2>
+        <div id="viewer-meta" class="card-meta"></div>
+      </div>
+      <label class="check viewer-select"><input type="checkbox" id="viewer-selected"> Selected</label>
+      <button class="secondary small" id="viewer-prev" title="Previous (←)">‹ Prev</button>
+      <button class="secondary small" id="viewer-next" title="Next (→)">Next ›</button>
+      <button class="icon" data-close aria-label="Close">×</button>
+    </div>
+    <div class="viewer-body">
+      <canvas id="viewer-canvas"></canvas>
+      <div>
+        <dl id="viewer-info" class="info"></dl>
+        <h3>Boxes</h3>
+        <div class="table-wrap">
+          <table class="files"><thead><tr><th>Class</th><th class="num">Score</th><th>Box (x, y, w, h)</th></tr></thead>
+            <tbody id="viewer-boxes"></tbody></table>
+        </div>
+        <div class="dialog-actions">
+          <a id="viewer-download" class="button secondary" download>Download</a>
+          <button id="viewer-delete" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="images.js"></script>
+</body>
+</html>
