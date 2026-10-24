@@ -108,7 +108,7 @@ dashboard server (`GET /sys`), because `server.py` reports Ultralytics figures o
 | Selection | A checkbox on each image (Shift-click selects a range), **Select shown**, **Select all matching** (also images not loaded yet) |
 | Download | **Download N** as a zip: **YOLO dataset** (`images/`, `labels/`, `data.yaml`, ready for `yolo train data=data.yaml`; **Min score** leaves weak boxes out) or **Images only** |
 | Delete | **Delete N** removes the selected images |
-| Viewer | Click an image: the boxes drawn on it, a box table, Download, Delete, Selected; ‹ › or the arrow keys step through the images |
+| Viewer | Click an image: the boxes drawn on it, a box table, Download, Delete, Selected; ‹ › or the arrow keys step through the images. **Boxes** and **Labels** switch the boxes and the class-name tags on or off (keys B and L; remembered in the browser), so nothing covers the area around an object. Tags are see-through and sit above the box, or below it at the top edge. Hovering a row of the box table shows that one box with its name |
 
 ## How it works
 

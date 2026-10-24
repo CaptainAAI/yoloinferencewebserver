@@ -133,6 +133,8 @@
         <h2 id="viewer-title"></h2>
         <div id="viewer-meta" class="card-meta"></div>
       </div>
+      <label class="check viewer-select" title="Draw the boxes (B)"><input type="checkbox" id="viewer-show-boxes" checked> Boxes</label>
+      <label class="check viewer-select" title="Write the class names on the image (L)"><input type="checkbox" id="viewer-show-labels" checked> Labels</label>
       <label class="check viewer-select"><input type="checkbox" id="viewer-selected"> Selected</label>
       <button class="secondary small" id="viewer-prev" title="Previous (←)">‹ Prev</button>
       <button class="secondary small" id="viewer-next" title="Next (→)">Next ›</button>
@@ -144,7 +146,7 @@
         <dl id="viewer-info" class="info"></dl>
         <h3>Boxes</h3>
         <div class="table-wrap">
-          <table class="files"><thead><tr><th>Class</th><th class="num">Score</th><th>Box (x, y, w, h)</th></tr></thead>
+          <table class="files viewer-box-table"><thead><tr><th>Class</th><th class="num">Score</th><th>Box (x, y, w, h)</th></tr></thead>
             <tbody id="viewer-boxes"></tbody></table>
         </div>
         <div class="dialog-actions">

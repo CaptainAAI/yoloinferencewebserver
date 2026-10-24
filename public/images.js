@@ -16,7 +16,16 @@ let nextCursor = null;     // continue the list from here ("Load more")
 let total = 0;             // images the filters match
 let lastClicked = -1;      // index of the last checkbox clicked, for Shift-click ranges
 let viewing = -1;          // index in `items` open in the viewer
+let viewerImage = null;    // the loaded image of the viewer, kept for redrawing
+let highlighted = -1;      // box under the mouse in the viewer's box table
 let addressEdited = false;
+
+// Viewer drawing options, remembered in this browser only
+const VIEW_KEY = "yolo-images-viewer";
+const viewOptions = { boxes: true, labels: true };
+try {
+  Object.assign(viewOptions, JSON.parse(localStorage.getItem(VIEW_KEY)) || {});
+} catch { /* storage blocked: keep the defaults */ }
 
 // ===== helpers =====
 
@@ -392,42 +401,78 @@ function openViewer(index) {
   $("viewer-info").replaceChildren(...rows.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
 
   const names = rec.names || {};
-  $("viewer-boxes").replaceChildren(...(rec.detections.length ? rec.detections.map((d) => {
+  highlighted = -1;
+  // Hovering a row shows that box and its name, also while boxes or labels are hidden
+  $("viewer-boxes").replaceChildren(...(rec.detections.length ? rec.detections.map((d, i) => {
     const [x1, y1, x2, y2, score, cls] = d;
     const id = Math.round(cls);
-    return h("tr", {},
+    return h("tr", { onmouseenter: () => { highlighted = i; drawViewer(); }, onmouseleave: () => { highlighted = -1; drawViewer(); } },
       h("td", {}, h("i", { class: "swatch", style: `background:${classColor(id)}` }), names[id] ?? String(id)),
       h("td", { class: "num", text: score.toFixed(2) }),
       h("td", { text: `${Math.round(x1)}, ${Math.round(y1)}, ${Math.round(x2 - x1)}, ${Math.round(y2 - y1)}` }));
   }) : [h("tr", {}, h("td", { colspan: "3", class: "sub", text: "No boxes" }))]));
 
-  const canvas = $("viewer-canvas");
+  viewerImage = null;
   const image = new Image();
   image.onload = () => {
     if (items[viewing] !== rec) return; // moved on meanwhile
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(image, 0, 0);
-    const line = Math.max(2, Math.round(image.naturalWidth / 400));
-    ctx.font = `${Math.max(12, line * 7)}px system-ui, sans-serif`;
-    for (const [x1, y1, x2, y2, score, cls] of rec.detections) {
-      const id = Math.round(cls);
-      const label = `${names[id] ?? id} ${score.toFixed(2)}`;
-      ctx.strokeStyle = ctx.fillStyle = classColor(id);
-      ctx.lineWidth = line;
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-      const tw = ctx.measureText(label).width + 8;
-      const th = Math.max(16, line * 9);
-      const ty = y1 - th < 0 ? y1 : y1 - th;
-      ctx.fillRect(x1, ty, tw, th);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(label, x1 + 4, ty + th - line * 2.5);
-    }
+    viewerImage = image;
+    drawViewer();
   };
   image.src = fileUrl;
   if (!viewer.open) viewer.showModal();
 }
+
+// Draws the open image with its boxes and labels as the Boxes / Labels switches say.
+// A label goes above its box, or below it when there is no room above, so it never
+// covers the object itself; its background is see-through.
+function drawViewer() {
+  const rec = items[viewing];
+  const image = viewerImage;
+  if (!rec || !image) return;
+  const canvas = $("viewer-canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0);
+  const names = rec.names || {};
+  const line = Math.max(2, Math.round(image.naturalWidth / 500));
+  const fontPx = Math.max(11, line * 6);
+  ctx.font = `${fontPx}px system-ui, sans-serif`;
+  rec.detections.forEach(([x1, y1, x2, y2, score, cls], i) => {
+    const hot = i === highlighted;
+    if (!viewOptions.boxes && !hot) return;
+    const id = Math.round(cls);
+    const color = classColor(id);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = hot ? line * 2 : line;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    if (!viewOptions.labels && !hot) return;
+    const label = `${names[id] ?? id} ${score.toFixed(2)}`;
+    const tw = ctx.measureText(label).width + 6;
+    const th = fontPx + 6;
+    let ty = y1 - th;                                  // above the box
+    if (ty < 0) ty = y2 + th <= canvas.height ? y2 : y1; // below it, or inside as a last resort
+    ctx.globalAlpha = hot ? 0.9 : 0.55;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, ty, tw, th);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x1 + 3, ty + th - 5);
+  });
+}
+
+function setViewOption(key, value) {
+  viewOptions[key] = value;
+  $(key === "boxes" ? "viewer-show-boxes" : "viewer-show-labels").checked = value;
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify(viewOptions)); } catch { /* not remembered */ }
+  drawViewer();
+}
+
+$("viewer-show-boxes").checked = viewOptions.boxes;
+$("viewer-show-labels").checked = viewOptions.labels;
+$("viewer-show-boxes").addEventListener("change", (event) => setViewOption("boxes", event.target.checked));
+$("viewer-show-labels").addEventListener("change", (event) => setViewOption("labels", event.target.checked));
 
 async function step(delta) {
   const target = viewing + delta;
@@ -441,6 +486,9 @@ $("viewer-next").addEventListener("click", () => step(1));
 viewer.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") step(-1);
   if (event.key === "ArrowRight") step(1);
+  if (event.target.matches("input[type=text], input[type=number], textarea")) return;
+  if (event.key === "b" || event.key === "B") setViewOption("boxes", !viewOptions.boxes);
+  if (event.key === "l" || event.key === "L") setViewOption("labels", !viewOptions.labels);
 });
 
 $("viewer-selected").addEventListener("change", (event) => {
@@ -467,7 +515,7 @@ $("viewer-delete").addEventListener("click", async () => {
 for (const button of document.querySelectorAll("[data-close]")) {
   button.addEventListener("click", () => button.closest("dialog").close());
 }
-viewer.addEventListener("close", () => { viewing = -1; });
+viewer.addEventListener("close", () => { viewing = -1; viewerImage = null; });
 
 // ===== polling =====
 

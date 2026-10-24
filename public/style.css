@@ -370,6 +370,7 @@ footer { padding: 0 24px 24px; color: var(--muted); font-size: 12px; max-width: 
 
 .viewer-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; margin-top: 12px; align-items: start; }
 .viewer-body canvas { width: 100%; height: auto; border-radius: 8px; background: var(--line); }
+.viewer-box-table tbody tr:hover { background: var(--line); cursor: default; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 a.button {
   display: inline-block;
