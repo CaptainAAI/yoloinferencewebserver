@@ -91,7 +91,10 @@ function stat(label, value) {
 }
 
 // Same colour per class as the SDK's Draw()
-const classColor = (id) => `rgb(${(id * 199) % 255}, ${(id * 131) % 255}, ${(id * 67) % 255})`;
+// Ultralytics' plot palette: the same colour per class as the C++ SDK's Draw(), never black
+const PALETTE = ["#FF3838", "#FF9D97", "#FF701F", "#FFB21D", "#CFD231", "#48F90A", "#92CC17", "#3DDB86", "#1A9334", "#00D4BB",
+  "#2C99A8", "#00C2FF", "#344593", "#6473FF", "#0018EC", "#8438FF", "#520085", "#CB38FF", "#FF95C8", "#FF37C7"];
+const classColor = (id) => PALETTE[Math.abs(id) % PALETTE.length];
 
 // ===== saving: address, counters, switches =====
 
